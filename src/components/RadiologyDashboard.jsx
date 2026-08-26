@@ -11,7 +11,7 @@ export default function RadiologyDashboard() {
   const [selectedExam, setSelectedExam] = useState(null);
   
   // Viewport State
-  const [scanUrl, setScanUrl] = useState(null);
+  const [scanUrl, setScanUrl] = useState('');
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -24,7 +24,7 @@ export default function RadiologyDashboard() {
   const [rotation, setRotation] = useState(0);
 
   // Measurement Calipers State
-  const [activeTool, setActiveTool] = useState('pan'); // 'pan', 'measure'
+  const [activeTool, setActiveTool] = useState('pan');
   const [measureStart, setMeasureStart] = useState(null);
   const [measureEnd, setMeasureEnd] = useState(null);
   const [isMeasuring, setIsMeasuring] = useState(false);
@@ -85,29 +85,38 @@ export default function RadiologyDashboard() {
 
   const fetchRadiologistQueue = async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from('opd_visits')
-      .select('*, patients(*, master_payers(company_name))')
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('opd_visits')
+        .select('*, patients(*, master_payers(company_name))')
+        .order('created_at', { ascending: false });
 
-    if (data) {
-      const withRadio = data.filter(v => {
-        try {
-          const inv = JSON.parse(v.investigations_advised || '{}');
-          return inv.radiology && inv.radiology.length > 0;
-        } catch {
-          return false;
+      if (data && !error) {
+        const withRadio = data.filter(v => {
+          try {
+            if (!v.investigations_advised) return false;
+            const inv = typeof v.investigations_advised === 'string' 
+              ? JSON.parse(v.investigations_advised) 
+              : v.investigations_advised;
+            return inv && inv.radiology && inv.radiology.length > 0;
+          } catch {
+            return false;
+          }
+        });
+        setWorklist(withRadio);
+        if (withRadio.length > 0 && !selectedExam) {
+          loadExam(withRadio[0]);
         }
-      });
-      setWorklist(withRadio);
-      if (withRadio.length > 0 && !selectedExam) {
-        loadExam(withRadio[0]);
       }
+    } catch (e) {
+      console.error("Queue fetch error:", e);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const loadExam = async (visit) => {
+    if (!visit) return;
     setSelectedExam(visit);
     setIsSigned(false);
     setStatusMsg('');
@@ -117,27 +126,39 @@ export default function RadiologyDashboard() {
     setIsCriticalFinding(false);
     resetViewer();
 
-    // Fetch the DICOM / R2 scan URL from radiology_reports table
-    const { data: reportData } = await supabase
-      .from('radiology_reports')
-      .select('dicom_file_url')
-      .eq('visit_id', visit.visit_id)
-      .maybeSingle();
+    try {
+      const { data: reportData } = await supabase
+        .from('radiology_reports')
+        .select('dicom_file_url')
+        .eq('visit_id', visit.visit_id)
+        .maybeSingle();
 
-    if (reportData && reportData.dicom_file_url) {
-      setScanUrl(reportData.dicom_file_url);
-    } else {
-      setScanUrl("https://pub-11be46ea1fc5e4ea4cb8a1046b8ce31b.r2.dev/studies/DEMO-UHID-9999/CHEST_XRAY_REAL.png");
+      if (reportData && reportData.dicom_file_url) {
+        setScanUrl(reportData.dicom_file_url);
+      } else {
+        setScanUrl('');
+      }
+    } catch {
+      setScanUrl('');
     }
   };
 
+  const handleFileUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const blobUrl = URL.createObjectURL(file);
+    setScanUrl(blobUrl);
+  };
+
   const applyTemplate = (t) => {
-    setTechniqueProtocol(t.technique);
-    setFindingsText(t.findings);
-    setImpressionText(t.impression);
+    if (!t) return;
+    setTechniqueProtocol(t.technique || '');
+    setFindingsText(t.findings || '');
+    setImpressionText(t.impression || '');
   };
 
   const applyPreset = (p) => {
+    if (!p) return;
     setBrightness(p.brightness);
     setContrast(p.contrast);
   };
@@ -187,11 +208,11 @@ export default function RadiologyDashboard() {
   };
 
   const calculateMeasurementMm = () => {
-    if (!measureStart || !measureEnd) return 0;
+    if (!measureStart || !measureEnd) return '0.0';
     const dx = measureEnd.x - measureStart.x;
     const dy = measureEnd.y - measureStart.y;
     const px = Math.sqrt(dx * dx + dy * dy);
-    return (px * 0.26 / zoom).toFixed(1);
+    return (px * 0.26 / (zoom || 1)).toFixed(1);
   };
 
   const handleSignReport = async () => {
@@ -241,7 +262,7 @@ export default function RadiologyDashboard() {
               <h1 className="text-base font-black tracking-wide text-white">
                 Dr. Kalyan's Professional PACS DICOM Viewer & Reporting Studio
               </h1>
-              <p className="text-[11px] text-slate-400">Streaming live from Cloudflare R2 Bucket (`hospital-dicom-archive`)</p>
+              <p className="text-[11px] text-slate-400">High-Performance Canvas Viewport • Cloudflare R2 Archive</p>
             </div>
           </div>
 
@@ -272,7 +293,7 @@ export default function RadiologyDashboard() {
           <div className="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-lg p-3 shadow-sm h-fit">
             <div className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2.5 flex justify-between items-center">
               <span>PACS Worklist ({worklist.length})</span>
-              <span className="text-[10px] text-emerald-400 font-mono">R2 Live</span>
+              <span className="text-[10px] text-emerald-400 font-mono">Live Sync</span>
             </div>
 
             <div className="space-y-1.5 max-h-[75vh] overflow-y-auto">
@@ -293,9 +314,9 @@ export default function RadiologyDashboard() {
                       <span className="font-mono font-bold text-blue-400">{v.token_display || `#${v.opd_number}`}</span>
                       <span className="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.2 rounded font-semibold">{v.department}</span>
                     </div>
-                    <div className="font-bold text-slate-100 mt-1">{v.patients?.name}</div>
+                    <div className="font-bold text-slate-100 mt-1">{v.patients?.name || 'Walk-in Patient'}</div>
                     <div className="text-[11px] text-slate-400 flex justify-between mt-0.5">
-                      <span>{v.patients?.age_years}Y / {v.patients?.sex}</span>
+                      <span>{v.patients?.age_years || 'N/A'}Y / {v.patients?.sex || 'M'}</span>
                       <span className="text-[10px] text-slate-400">Ref: {v.consultant_id}</span>
                     </div>
                   </div>
@@ -312,13 +333,13 @@ export default function RadiologyDashboard() {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-black text-sm text-blue-400 font-mono">{selectedExam.token_display || `#${selectedExam.opd_number}`}</span>
-                    <span className="font-bold text-sm text-white">{selectedExam.patients?.name}</span>
+                    <span className="font-bold text-sm text-white">{selectedExam.patients?.name || 'Patient'}</span>
                     <span className="text-xs text-slate-400">({selectedExam.patients?.age_years} Y / {selectedExam.patients?.sex})</span>
                     <span className="text-xs font-mono text-slate-500">UHID: {selectedExam.uhid}</span>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-xs font-bold text-emerald-400">Source: Cloudflare R2 Stream</div>
+                  <div className="text-xs font-bold text-emerald-400">Modality: Digital Radiography (DR)</div>
                 </div>
               </div>
 
@@ -380,7 +401,7 @@ export default function RadiologyDashboard() {
                       <div className="relative w-full h-full flex items-center justify-center">
                         <img
                           src={scanUrl}
-                          alt="Cloudflare R2 DICOM Scan"
+                          alt="DICOM Scan"
                           draggable={false}
                           style={{
                             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${rotation}deg)`,
@@ -422,18 +443,23 @@ export default function RadiologyDashboard() {
                         )}
                       </div>
                     ) : (
-                      <div className="text-center text-slate-500 p-8">
-                        <ImageIcon className="w-16 h-16 mx-auto mb-3 opacity-40 text-blue-400" />
-                        <p className="text-sm text-slate-300 font-bold mb-1">Loading study from Cloudflare R2...</p>
+                      <div className="text-center text-slate-500 p-8 space-y-3">
+                        <ImageIcon className="w-16 h-16 mx-auto opacity-40 text-blue-400" />
+                        <p className="text-sm text-slate-300 font-bold">No scan file linked for this patient yet.</p>
+                        <p className="text-xs text-slate-400">Load or drop an X-ray / DICOM preview image directly:</p>
+                        <label className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded cursor-pointer shadow">
+                          <Upload className="w-4 h-4" /> Choose Scan File
+                          <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+                        </label>
                       </div>
                     )}
 
-                    {/* HUD Information Overlay */}
+                    {/* HUD Overlay */}
                     {scanUrl && (
                       <div className="absolute top-3 left-3 text-[11px] font-mono text-emerald-400 bg-black/80 px-3 py-1.5 rounded border border-emerald-900 pointer-events-none shadow space-y-0.5">
-                        <div>Patient: {selectedExam.patients?.name}</div>
-                        <div>Storage: Cloudflare R2 (`hospital-dicom-archive`)</div>
-                        <div>Zoom: {(zoom * 100).toFixed(0)}% | Tool: {activeTool.toUpperCase()}</div>
+                        <div>Patient: {selectedExam.patients?.name || 'Unknown'}</div>
+                        <div>Modality: Digital Radiography | Zoom: {(zoom * 100).toFixed(0)}%</div>
+                        <div>Tool: {activeTool.toUpperCase()} | Rot: {rotation}°</div>
                       </div>
                     )}
                   </div>
@@ -566,7 +592,7 @@ export default function RadiologyDashboard() {
           <div className="border-b border-black pb-2 mb-4 text-xs flex justify-between">
             <div>
               <div className="font-bold">UHID: <span className="font-mono">{selectedExam.uhid}</span></div>
-              <div className="text-sm font-bold mt-0.5">{selectedExam.patients?.name} ({selectedExam.patients?.age_years} Y / {selectedExam.patients?.sex})</div>
+              <div className="text-sm font-bold mt-0.5">{selectedExam.patients?.name || 'Patient'} ({selectedExam.patients?.age_years || 'N/A'} Y / {selectedExam.patients?.sex || 'M'})</div>
               <div>Ref Consultant: <span className="font-bold">{selectedExam.consultant_id}</span></div>
             </div>
             <div className="text-right">
