@@ -6,11 +6,45 @@ import {
   Ruler, FileText, Eye, Maximize2, Upload, Image as ImageIcon
 } from 'lucide-react';
 
+const WW_WL_PRESETS = [
+  { name: 'Bone / Ortho', brightness: 90, contrast: 180 },
+  { name: 'Soft Tissue', brightness: 100, contrast: 110 },
+  { name: 'Lung Window', brightness: 130, contrast: 160 },
+  { name: 'Brain / Stroke', brightness: 105, contrast: 210 },
+  { name: 'Reset', brightness: 100, contrast: 100 }
+];
+
+const STRUCTURED_TEMPLATES = [
+  {
+    title: 'TKR Pre-Op / OA Knee Grade IV',
+    technique: 'Digital Radiography of Both Knee Joints (Weight-bearing AP, 30° Flexion Lateral & Skyline Views).',
+    findings: '1. Medial Compartment: Complete obliteration of joint space with bone-on-bone articulation, prominent subchondral sclerosis, and eburnation.\n2. Lateral Compartment: Preserved joint space without significant subchondral change.\n3. Alignment: Approx 12 degrees anatomical varus mechanical axis deviation.',
+    impression: 'Severe Primary Bilateral Osteoarthritis (Kellgren-Lawrence Grade IV) predominantly affecting the medial compartments with varus malalignment. Surgical Total Knee Arthroplasty (TKR) candidate.'
+  },
+  {
+    title: 'LS Spine Degenerative Disc Disease',
+    technique: 'Digital Radiography of Lumbo-Sacral Spine in AP, Lateral, and Dynamic Projections.',
+    findings: '1. Curvature: Lumbar lordosis is reduced with associated paravertebral muscle spasm.\n2. Disc Spaces: Marked intervertebral disc height reduction at L4-L5 and L5-S1 levels with vacuum phenomenon.',
+    impression: 'Lumbar Spondylosis with multilevel Degenerative Disc Disease (most pronounced at L4-L5 & L5-S1).'
+  },
+  {
+    title: 'Acute Distal Radius (Colles) Fracture',
+    technique: 'Emergency Digital Radiograph of Left Wrist Joint in PA and Lateral Projections.',
+    findings: '1. Cortical disruption: Complete extra-articular transverse fracture through the distal metaphysis of the radius.\n2. Displacement: Dorsal translation of distal fragment with approx 18 degrees apex volar angulation.',
+    impression: 'Displaced Extra-Articular Distal Radius Fracture (Colles type) with ulnar styloid avulsion.'
+  },
+  {
+    title: 'Chest PA - Normal Radiograph',
+    technique: 'Single exposure High-kV Digital Radiograph of Chest in erect PA projection on full deep inspiration.',
+    findings: '1. Lungs: Both lung fields are clear with normal branching broncho-vascular markings. No focal consolidation or effusion.\n2. Mediastinum & Heart: Cardiac silhouette is normal in contour and transverse diameter.',
+    impression: 'Normal Chest PA Radiograph. No active cardiopulmonary abnormality.'
+  }
+];
+
 export default function RadiologyDashboard() {
   const [worklist, setWorklist] = useState([]);
   const [selectedExam, setSelectedExam] = useState(null);
   
-  // Viewport State
   const [scanUrl, setScanUrl] = useState('');
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -23,61 +57,21 @@ export default function RadiologyDashboard() {
   const [isInverted, setIsInverted] = useState(false);
   const [rotation, setRotation] = useState(0);
 
-  // Measurement Calipers State
   const [activeTool, setActiveTool] = useState('pan');
   const [measureStart, setMeasureStart] = useState(null);
   const [measureEnd, setMeasureEnd] = useState(null);
   const [isMeasuring, setIsMeasuring] = useState(false);
 
-  // Structured Reporting State
   const [clinicalHistory, setClinicalHistory] = useState('');
   const [techniqueProtocol, setTechniqueProtocol] = useState('High-Resolution Digital Radiography (DR) with Direct Flat Panel Detector.');
   const [findingsText, setFindingsText] = useState('');
   const [impressionText, setImpressionText] = useState('');
   const [isCriticalFinding, setIsCriticalFinding] = useState(false);
   const [criticalDoctorNotified, setCriticalDoctorNotified] = useState('');
-  const [radiologistName, setRadiologistName] = useState('Dr. Kalyan, MD (Radiodiagnosis)');
-  const [radiologistRegNo, setRadiologistRegNo] = useState('MCI / DMC-51924');
-  const [isSigned, setIsSigned] = useState(false);
+  const [radiologistName] = useState('Dr. Kalyan, MD (Radiodiagnosis)');
+  const [radiologistRegNo] = useState('MCI / DMC-51924');
   const [statusMsg, setStatusMsg] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // WW/WL Presets
-  const WW_WL_PRESETS = [
-    { name: 'Bone / Ortho', brightness: 90, contrast: 180 },
-    { name: 'Soft Tissue', brightness: 100, contrast: 110 },
-    { name: 'Lung Window', brightness: 130, contrast: 160 },
-    { name: 'Brain / Stroke', brightness: 105, contrast: 210 },
-    { name: 'Reset', brightness: 100, contrast: 100 }
-  ];
-
-  // Subspecialty Templates
-  const STRUCTURED_TEMPLATES = [
-    {
-      title: 'TKR Pre-Op / OA Knee Grade IV',
-      technique: 'Digital Radiography of Both Knee Joints (Weight-bearing AP, 30° Flexion Lateral & Skyline Views).',
-      findings: '1. Medial Compartment: Complete obliteration of joint space with bone-on-bone articulation, prominent subchondral sclerosis, and eburnation.\n2. Lateral Compartment: Preserved joint space without significant subchondral change.\n3. Alignment: Approx 12 degrees anatomical varus mechanical axis deviation.',
-      impression: 'Severe Primary Bilateral Osteoarthritis (Kellgren-Lawrence Grade IV) predominantly affecting the medial compartments with varus malalignment. Surgical Total Knee Arthroplasty (TKR) candidate.'
-    },
-    {
-      title: 'LS Spine Degenerative Disc Disease',
-      technique: 'Digital Radiography of Lumbo-Sacral Spine in AP, Lateral, and Dynamic Projections.',
-      findings: '1. Curvature: Lumbar lordosis is reduced with associated paravertebral muscle spasm.\n2. Disc Spaces: Marked intervertebral disc height reduction at L4-L5 and L5-S1 levels with vacuum phenomenon.',
-      impression: 'Lumbar Spondylosis with multilevel Degenerative Disc Disease (most pronounced at L4-L5 & L5-S1).'
-    },
-    {
-      title: 'Acute Distal Radius (Colles) Fracture',
-      technique: 'Emergency Digital Radiograph of Left Wrist Joint in PA and Lateral Projections.',
-      findings: '1. Cortical disruption: Complete extra-articular transverse fracture through the distal metaphysis of the radius.\n2. Displacement: Dorsal translation of distal fragment with approx 18 degrees apex volar angulation.',
-      impression: 'Displaced Extra-Articular Distal Radius Fracture (Colles type) with ulnar styloid avulsion.'
-    },
-    {
-      title: 'Chest PA - Normal Radiograph',
-      technique: 'Single exposure High-kV Digital Radiograph of Chest in erect PA projection on full deep inspiration.',
-      findings: '1. Lungs: Both lung fields are clear with normal branching broncho-vascular markings. No focal consolidation or effusion.\n2. Mediastinum & Heart: Cardiac silhouette is normal in contour and transverse diameter.',
-      impression: 'Normal Chest PA Radiograph. No active cardiopulmonary abnormality.'
-    }
-  ];
 
   useEffect(() => {
     fetchRadiologistQueue();
@@ -91,25 +85,29 @@ export default function RadiologyDashboard() {
         .select('*, patients(*, master_payers(company_name))')
         .order('created_at', { ascending: false });
 
-      if (data && !error) {
-        const withRadio = data.filter(v => {
-          try {
-            if (!v.investigations_advised) return false;
-            const inv = typeof v.investigations_advised === 'string' 
-              ? JSON.parse(v.investigations_advised) 
-              : v.investigations_advised;
-            return inv && inv.radiology && inv.radiology.length > 0;
-          } catch {
-            return false;
-          }
-        });
-        setWorklist(withRadio);
-        if (withRadio.length > 0 && !selectedExam) {
-          loadExam(withRadio[0]);
-        }
+      if (error || !data) {
+        setWorklist([]);
+        return;
       }
-    } catch (e) {
-      console.error("Queue fetch error:", e);
+
+      const withRadio = data.filter(v => {
+        try {
+          if (!v || !v.investigations_advised) return false;
+          const inv = typeof v.investigations_advised === 'string' 
+            ? JSON.parse(v.investigations_advised) 
+            : v.investigations_advised;
+          return Array.isArray(inv?.radiology) && inv.radiology.length > 0;
+        } catch {
+          return false;
+        }
+      });
+
+      setWorklist(withRadio || []);
+      if (withRadio && withRadio.length > 0) {
+        loadExam(withRadio[0]);
+      }
+    } catch {
+      setWorklist([]);
     } finally {
       setLoading(false);
     }
@@ -118,7 +116,6 @@ export default function RadiologyDashboard() {
   const loadExam = async (visit) => {
     if (!visit) return;
     setSelectedExam(visit);
-    setIsSigned(false);
     setStatusMsg('');
     setClinicalHistory(visit.chief_complaints || 'Clinical investigation under evaluation');
     setFindingsText('');
@@ -133,21 +130,16 @@ export default function RadiologyDashboard() {
         .eq('visit_id', visit.visit_id)
         .maybeSingle();
 
-      if (reportData && reportData.dicom_file_url) {
-        setScanUrl(reportData.dicom_file_url);
-      } else {
-        setScanUrl('');
-      }
+      setScanUrl(reportData?.dicom_file_url || '');
     } catch {
       setScanUrl('');
     }
   };
 
   const handleFileUpload = (e) => {
-    const file = e.target.files && e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
-    const blobUrl = URL.createObjectURL(file);
-    setScanUrl(blobUrl);
+    setScanUrl(URL.createObjectURL(file));
   };
 
   const applyTemplate = (t) => {
@@ -159,8 +151,8 @@ export default function RadiologyDashboard() {
 
   const applyPreset = (p) => {
     if (!p) return;
-    setBrightness(p.brightness);
-    setContrast(p.contrast);
+    setBrightness(p.brightness ?? 100);
+    setContrast(p.contrast ?? 100);
   };
 
   const resetViewer = () => {
@@ -245,7 +237,6 @@ export default function RadiologyDashboard() {
       consult_stage: 'REVIEW_READY'
     }).eq('visit_id', selectedExam.visit_id);
 
-    setIsSigned(true);
     setStatusMsg(`✓ Report electronically signed & locked by ${radiologistName}. Findings pushed to Doctor Desk.`);
   };
 
@@ -262,7 +253,7 @@ export default function RadiologyDashboard() {
               <h1 className="text-base font-black tracking-wide text-white">
                 Dr. Kalyan's Professional PACS DICOM Viewer & Reporting Studio
               </h1>
-              <p className="text-[11px] text-slate-400">High-Performance Canvas Viewport • Cloudflare R2 Archive</p>
+              <p className="text-[11px] text-slate-400">High-Performance Canvas Viewport • Zero Egress Storage</p>
             </div>
           </div>
 
@@ -292,15 +283,15 @@ export default function RadiologyDashboard() {
           {/* Worklist Sidebar */}
           <div className="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-lg p-3 shadow-sm h-fit">
             <div className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2.5 flex justify-between items-center">
-              <span>PACS Worklist ({worklist.length})</span>
+              <span>PACS Worklist ({worklist?.length || 0})</span>
               <span className="text-[10px] text-emerald-400 font-mono">Live Sync</span>
             </div>
 
             <div className="space-y-1.5 max-h-[75vh] overflow-y-auto">
-              {worklist.length === 0 ? (
+              {(!worklist || worklist.length === 0) ? (
                 <div className="text-center py-10 text-slate-500 text-xs">No pending studies.</div>
               ) : (
-                worklist.map(v => (
+                (worklist || []).map(v => (
                   <div
                     key={v.visit_id}
                     onClick={() => loadExam(v)}
@@ -334,7 +325,7 @@ export default function RadiologyDashboard() {
                   <div className="flex items-center gap-2">
                     <span className="font-black text-sm text-blue-400 font-mono">{selectedExam.token_display || `#${selectedExam.opd_number}`}</span>
                     <span className="font-bold text-sm text-white">{selectedExam.patients?.name || 'Patient'}</span>
-                    <span className="text-xs text-slate-400">({selectedExam.patients?.age_years} Y / {selectedExam.patients?.sex})</span>
+                    <span className="text-xs text-slate-400">({selectedExam.patients?.age_years || 'N/A'} Y / {selectedExam.patients?.sex || 'M'})</span>
                     <span className="text-xs font-mono text-slate-500">UHID: {selectedExam.uhid}</span>
                   </div>
                 </div>
@@ -377,7 +368,7 @@ export default function RadiologyDashboard() {
 
                     {/* WW/WL Presets */}
                     <div className="flex flex-wrap gap-1.5">
-                      {WW_WL_PRESETS.map((p, idx) => (
+                      {(WW_WL_PRESETS || []).map((p, idx) => (
                         <button
                           key={idx}
                           type="button"
@@ -411,7 +402,6 @@ export default function RadiologyDashboard() {
                           className="max-h-full max-w-full object-contain pointer-events-none"
                         />
 
-                        {/* Measurement Caliper Overlay */}
                         {measureStart && (
                           <svg className="absolute inset-0 w-full h-full pointer-events-none">
                             <line
@@ -454,7 +444,6 @@ export default function RadiologyDashboard() {
                       </div>
                     )}
 
-                    {/* HUD Overlay */}
                     {scanUrl && (
                       <div className="absolute top-3 left-3 text-[11px] font-mono text-emerald-400 bg-black/80 px-3 py-1.5 rounded border border-emerald-900 pointer-events-none shadow space-y-0.5">
                         <div>Patient: {selectedExam.patients?.name || 'Unknown'}</div>
@@ -476,7 +465,7 @@ export default function RadiologyDashboard() {
 
                     {/* Templates */}
                     <div className="flex flex-wrap gap-1.5">
-                      {STRUCTURED_TEMPLATES.map((t, idx) => (
+                      {(STRUCTURED_TEMPLATES || []).map((t, idx) => (
                         <button
                           key={idx}
                           type="button"
@@ -521,7 +510,6 @@ export default function RadiologyDashboard() {
                         />
                       </div>
 
-                      {/* Critical Finding */}
                       <div className="p-2.5 bg-red-950/40 border border-red-900/60 rounded flex items-center justify-between">
                         <label className="flex items-center gap-2 text-xs font-bold text-red-400 cursor-pointer">
                           <input
