@@ -7,19 +7,12 @@ import {
 
 export default function BillingDashboard() {
   const [visits, setVisits] = useState([]);
-  const [payers, setPayers] = useState([]);
   const [selectedVisit, setSelectedVisit] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
 
-  // Bill items state
-  const [billItems, setBillItems] = useState([
-    { id: 1, name: 'Consultation Fee (Dr. Inderjit Singh)', category: 'OPD', rate: 800, qty: 1, discount: 0 }
-  ]);
-  const [newItemName, setNewItemName] = useState('');
-  const [newItemRate, setNewItemRate] = useState('');
-  const [newItemCategory, setNewItemCategory] = useState('LAB');
+  const [billItems, setBillItems] = useState([]);
   const [paymentMode, setPaymentMode] = useState('CASH');
 
   useEffect(() => {
@@ -29,20 +22,14 @@ export default function BillingDashboard() {
   const fetchBillingData = async () => {
     setLoading(true);
     try {
-      const { data: vData } = await supabase
+      const { data } = await supabase
         .from('opd_visits')
         .select('*, patients(*, master_payers(*))')
         .order('created_at', { ascending: false });
-      
-      const { data: pData } = await supabase
-        .from('master_payers')
-        .select('*')
-        .order('company_name');
 
-      setVisits(vData || []);
-      setPayers(pData || []);
-      if (vData && vData.length > 0 && !selectedVisit) {
-        loadVisitForBilling(vData[0]);
+      setVisits(data || []);
+      if (data && data.length > 0 && !selectedVisit) {
+        loadVisitForBilling(data[0]);
       }
     } catch (e) {
       console.error(e);
@@ -56,11 +43,25 @@ export default function BillingDashboard() {
     setSelectedVisit(visit);
     setStatusMsg('');
 
-    // Generate auto bill items based on advised tests
+    const isRepeat = visit.is_repeat_free_visit;
+    const isEmergency = visit.visit_type === 'EMERGENCY';
+    const payerType = visit.patients?.master_payers?.payer_type || 'CASH';
+
+    // Base consultation line item according to GNH master rules
+    let consultFee = isEmergency ? 500 : 300;
+    if (isRepeat) consultFee = 0;
+
     const items = [
-      { id: Date.now(), name: `OPD Consultation - ${visit.department}`, category: 'OPD', rate: 800, qty: 1, discount: 0 }
+      {
+        id: 'OPD_CONSULT',
+        name: isRepeat ? 'OPD Re-Visit (Free 3/7-Day Window)' : `Consultation Fee (${visit.department})`,
+        category: 'OPD',
+        rate: consultFee,
+        qty: 1
+      }
     ];
 
+    // Auto-decompose ordered labs and radiology into line items
     try {
       if (visit.investigations_advised) {
         const inv = typeof visit.investigations_advised === 'string'
@@ -68,16 +69,18 @@ export default function BillingDashboard() {
           : visit.investigations_advised;
 
         if (Array.isArray(inv?.lab)) {
-          inv.lab.forEach((item, idx) => {
-            const name = typeof item === 'string' ? item : item?.name || 'Lab Test';
-            items.push({ id: Date.now() + idx + 10, name: `Pathology: ${name}`, category: 'LAB', rate: 450, qty: 1, discount: 0 });
+          inv.lab.forEach((test, idx) => {
+            const testName = typeof test === 'string' ? test : test?.name || 'Lab Test';
+            const labRate = payerType === 'GOVERNMENT_CREDIT' ? 220 : 350;
+            items.push({ id: `LAB_${idx}`, name: `Pathology: ${testName}`, category: 'LAB', rate: labRate, qty: 1 });
           });
         }
 
         if (Array.isArray(inv?.radiology)) {
-          inv.radiology.forEach((item, idx) => {
-            const name = typeof item === 'string' ? item : item?.name || 'X-Ray / Scan';
-            items.push({ id: Date.now() + idx + 50, name: `Radiology: ${name}`, category: 'RADIO', rate: 900, qty: 1, discount: 0 });
+          inv.radiology.forEach((scan, idx) => {
+            const scanName = typeof scan === 'string' ? scan : scan?.name || 'Digital Radiography';
+            const radioRate = payerType === 'GOVERNMENT_CREDIT' ? 450 : 800;
+            items.push({ id: `RADIO_${idx}`, name: `Radiology: ${scanName}`, category: 'RADIO', rate: radioRate, qty: 1 });
           });
         }
       }
@@ -88,62 +91,31 @@ export default function BillingDashboard() {
     setBillItems(items);
   };
 
-  const addItemToBill = (e) => {
-    e.preventDefault();
-    if (!newItemName || !newItemRate) return;
-    setBillItems([
-      ...billItems,
-      {
-        id: Date.now(),
-        name: newItemName,
-        category: newItemCategory,
-        rate: parseFloat(newItemRate) || 0,
-        qty: 1,
-        discount: 0
-      }
-    ]);
-    setNewItemName('');
-    setNewItemRate('');
-  };
-
-  const removeItem = (id) => {
-    setBillItems(billItems.filter(i => i.id !== id));
-  };
-
   const calculateSubtotal = () => {
     return billItems.reduce((acc, curr) => acc + (curr.rate * curr.qty), 0);
   };
 
-  const getTpaDiscountPct = () => {
-    return selectedVisit?.patients?.master_payers?.discount_percentage || 0;
-  };
-
-  const calculateTotal = () => {
-    const sub = calculateSubtotal();
-    const discountAmount = (sub * getTpaDiscountPct()) / 100;
-    return sub - discountAmount;
-  };
-
   const filteredVisits = (visits || []).filter(v => {
     const q = (searchQuery || '').toLowerCase();
-    const name = v.patients?.name?.toLowerCase() || '';
-    const uhid = (v.uhid || '').toLowerCase();
-    const token = (v.token_display || `#${v.opd_number}` || '').toLowerCase();
-    return name.includes(q) || uhid.includes(q) || token.includes(q);
+    return (
+      (v.patients?.name || '').toLowerCase().includes(q) ||
+      (v.uhid || '').toLowerCase().includes(q) ||
+      (v.token_display || '').toLowerCase().includes(q)
+    );
   });
 
   return (
     <div className="w-full min-h-screen bg-slate-950 text-slate-100 font-sans p-2 md:p-4 flex flex-col space-y-3">
       <div className="print:hidden space-y-3">
-        {/* Top Bar */}
+        {/* Top Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between pb-3 border-b border-slate-800 gap-3">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-amber-600 text-white rounded-lg shadow">
               <Receipt className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-base font-black tracking-wide text-white">Cashier & Billing Desk</h1>
-              <p className="text-[11px] text-slate-400">Invoicing • TPA Tariffs • OPD/IPD Settlement • Receipt Printing</p>
+              <h1 className="text-base font-black tracking-wide text-white">Cashier & Dynamic Tariff Billing Desk</h1>
+              <p className="text-[11px] text-slate-400">NABH Gazette Rates • Payer Validity Verification • Split Receipts</p>
             </div>
           </div>
 
@@ -163,9 +135,9 @@ export default function BillingDashboard() {
           </div>
         )}
 
-        {/* Main Layout Grid */}
+        {/* Layout Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-          {/* Patient Search & Queue */}
+          {/* Patient List */}
           <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-lg p-3 shadow-sm h-fit">
             <div className="mb-2.5 flex items-center gap-2 bg-slate-950 border border-slate-800 px-2 py-1.5 rounded">
               <Search className="w-3.5 h-3.5 text-slate-400" />
@@ -207,7 +179,7 @@ export default function BillingDashboard() {
             </div>
           </div>
 
-          {/* Invoice Builder */}
+          {/* Invoice Desk */}
           {selectedVisit ? (
             <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-lg p-4 shadow-sm flex flex-col justify-between space-y-4">
               <div className="space-y-4">
@@ -217,7 +189,7 @@ export default function BillingDashboard() {
                     <div className="flex items-center gap-2">
                       <span className="font-black text-sm text-amber-400 font-mono">{selectedVisit.token_display || `#${selectedVisit.opd_number}`}</span>
                       <span className="font-bold text-sm text-white">{selectedVisit.patients?.name || 'Patient'}</span>
-                      <span className="text-xs text-slate-400">({selectedVisit.patients?.age_years || 'N/A'} Y / {selectedVisit.patients?.sex || 'M'})</span>
+                      <span className="text-xs text-slate-400">({selectedVisit.patients?.age_years} Y / {selectedVisit.patients?.sex})</span>
                     </div>
                     <div className="text-xs text-slate-400 mt-0.5">
                       UHID: <span className="font-mono text-slate-300">{selectedVisit.uhid}</span> | Consultant: <span className="text-slate-300 font-semibold">{selectedVisit.consultant_id}</span>
@@ -225,90 +197,38 @@ export default function BillingDashboard() {
                   </div>
                   <div className="text-right">
                     <span className="text-xs px-2.5 py-1 bg-amber-950/60 border border-amber-800 text-amber-300 rounded font-bold">
-                      Tariff: {selectedVisit.patients?.master_payers?.company_name || 'Self-Pay / General Cash'}
+                      Tariff: {selectedVisit.patients?.master_payers?.company_name || 'Self-Pay Cash'}
                     </span>
                   </div>
                 </div>
 
-                {/* Bill Line Items Table */}
+                {/* Bill Items */}
                 <div className="border border-slate-800 rounded-lg overflow-hidden">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800 font-bold">
                       <tr>
-                        <th className="p-2.5">Service / Item Description</th>
+                        <th className="p-2.5">Item Description</th>
                         <th className="p-2.5">Category</th>
-                        <th className="p-2.5 text-right">Rate (₹)</th>
+                        <th className="p-2.5 text-right">Tariff Rate (₹)</th>
                         <th className="p-2.5 text-center">Qty</th>
-                        <th className="p-2.5 text-right">Amount (₹)</th>
-                        <th className="p-2.5 text-center">Action</th>
+                        <th className="p-2.5 text-right">Payable (₹)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
                       {billItems.map(item => (
-                        <tr key={item.id} className="hover:bg-slate-800/30">
+                        <tr key={item.id}>
                           <td className="p-2.5 font-semibold text-slate-200">{item.name}</td>
                           <td className="p-2.5"><span className="px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded text-[10px] font-mono">{item.category}</span></td>
                           <td className="p-2.5 text-right font-mono text-slate-300">₹{item.rate}</td>
                           <td className="p-2.5 text-center font-mono">{item.qty}</td>
                           <td className="p-2.5 text-right font-mono font-bold text-amber-400">₹{item.rate * item.qty}</td>
-                          <td className="p-2.5 text-center">
-                            <button
-                              onClick={() => removeItem(item.id)}
-                              className="text-red-400 hover:text-red-300 text-[11px] font-bold px-1.5 py-0.5 rounded hover:bg-red-950"
-                            >
-                              ✕
-                            </button>
-                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
 
-                {/* Add Item Form */}
-                <form onSubmit={addItemToBill} className="grid grid-cols-1 md:grid-cols-12 gap-2 text-xs bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-                  <div className="md:col-span-5">
-                    <input
-                      type="text"
-                      placeholder="Add procedure, dressing, medicine, or test..."
-                      value={newItemName}
-                      onChange={(e) => setNewItemName(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-slate-200 outline-none"
-                    />
-                  </div>
-                  <div className="md:col-span-3">
-                    <select
-                      value={newItemCategory}
-                      onChange={(e) => setNewItemCategory(e.target.value)}
-                      className="w-full px-2 py-1.5 bg-slate-900 border border-slate-800 rounded text-slate-200 outline-none"
-                    >
-                      <option value="OPD">OPD Services</option>
-                      <option value="LAB">Pathology Lab</option>
-                      <option value="RADIO">Radiology Imaging</option>
-                      <option value="PROC">Procedure / OT</option>
-                      <option value="PHARM">Pharmacy</option>
-                    </select>
-                  </div>
-                  <div className="md:col-span-2">
-                    <input
-                      type="number"
-                      placeholder="Rate ₹"
-                      value={newItemRate}
-                      onChange={(e) => setNewItemRate(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-slate-200 outline-none"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <button
-                      type="submit"
-                      className="w-full py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded text-xs transition"
-                    >
-                      + Add
-                    </button>
-                  </div>
-                </form>
-
-                {/* Totals Calculation */}
+                {/* Settlement Options */}
                 <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-slate-400">Payment Mode:</span>
@@ -317,36 +237,30 @@ export default function BillingDashboard() {
                       onChange={(e) => setPaymentMode(e.target.value)}
                       className="px-2 py-1 bg-slate-900 border border-slate-700 rounded text-slate-200 outline-none font-bold"
                     >
-                      <option value="CASH">Cash</option>
-                      <option value="UPI / QR">UPI / QR (PhonePe / GPay)</option>
+                      <option value="CASH">Cash Counter</option>
+                      <option value="UPI / QR">UPI / QR (BHIM/GPay)</option>
                       <option value="CARD">Debit / Credit Card (POS)</option>
-                      <option value="TPA / CORPORATE">Corporate / TPA Direct</option>
+                      <option value="GOVT_CREDIT">Govt Credit (ECHS / CGHS Direct)</option>
                     </select>
                   </div>
 
-                  <div className="text-right space-y-1">
-                    <div className="text-slate-400 text-xs">Subtotal: <span className="font-mono text-slate-200 font-bold">₹{calculateSubtotal()}</span></div>
-                    {getTpaDiscountPct() > 0 && (
-                      <div className="text-emerald-400 text-xs">
-                        Payer Contract Discount ({getTpaDiscountPct()}%): <span className="font-mono font-bold">-₹{((calculateSubtotal() * getTpaDiscountPct()) / 100).toFixed(0)}</span>
-                      </div>
-                    )}
+                  <div className="text-right">
                     <div className="text-base font-black text-amber-400">
-                      Net Total Payable: <span className="font-mono">₹{calculateTotal().toFixed(0)}</span>
+                      Net Total Payable: <span className="font-mono">₹{calculateSubtotal().toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Action Buttons */}
+              {/* Footer */}
               <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
                 <button
                   onClick={() => {
-                    setStatusMsg(`✓ Receipt issued for ₹${calculateTotal().toFixed(0)} via ${paymentMode}`);
+                    setStatusMsg(`✓ Receipt settled for ₹${calculateSubtotal()} via ${paymentMode}`);
                   }}
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded shadow transition"
                 >
-                  Settle & Issue Invoice
+                  Settle & Issue Official Invoice
                 </button>
                 <button
                   onClick={() => window.print()}
@@ -358,13 +272,13 @@ export default function BillingDashboard() {
             </div>
           ) : (
             <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-lg p-20 text-center text-slate-400 text-sm">
-              Select a patient from the list to prepare or settle an invoice.
+              Select a patient to prepare or settle an invoice.
             </div>
           )}
         </div>
       </div>
 
-      {/* PRINTABLE TAX RECEIPT */}
+      {/* Printable Receipt */}
       {selectedVisit && (
         <div className="hidden print:block font-sans text-black p-8 bg-white" style={{ minHeight: '297mm' }}>
           <div className="text-center pb-3 border-b-2 border-black mb-4">
@@ -412,17 +326,10 @@ export default function BillingDashboard() {
           </table>
 
           <div className="border-t-2 border-black pt-3 flex justify-between items-start text-xs">
-            <div className="space-y-1 text-[10px] text-neutral-500">
-              <p>• Computer generated receipt. No physical signature required.</p>
-              <p>• All fees are non-refundable under hospital policy.</p>
-            </div>
-            <div className="text-right space-y-1">
-              <div>Subtotal: <span className="font-mono font-bold">₹{calculateSubtotal()}</span></div>
-              {getTpaDiscountPct() > 0 && (
-                <div>Discount ({getTpaDiscountPct()}%): <span className="font-mono">-₹{((calculateSubtotal() * getTpaDiscountPct()) / 100).toFixed(0)}</span></div>
-              )}
+            <p className="text-[10px] text-neutral-500">• Computer generated receipt under NABH guidelines.</p>
+            <div className="text-right">
               <div className="text-sm font-black border-t border-black pt-1">
-                Total Paid: <span className="font-mono">₹{calculateTotal().toFixed(0)}</span>
+                Total Paid: <span className="font-mono">₹{calculateSubtotal().toFixed(2)}</span>
               </div>
             </div>
           </div>
