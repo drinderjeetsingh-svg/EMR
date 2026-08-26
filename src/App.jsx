@@ -3,12 +3,13 @@ import IntakeDashboard from './components/IntakeDashboard';
 import DoctorDashboard from './components/DoctorDashboard';
 import LabDashboard from './components/LabDashboard';
 import RadiologyDashboard from './components/RadiologyDashboard';
+import BillingDashboard from './components/BillingDashboard';
+import WardDashboard from './components/WardDashboard';
 import { 
   Building2, Stethoscope, FlaskConical, Film, 
-  LogOut, User, ShieldCheck, AlertCircle 
+  Receipt, Bed, LogOut, User, ShieldCheck, AlertCircle 
 } from 'lucide-react';
 
-// Production Error Boundary to prevent blank screens
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -18,7 +19,7 @@ class ErrorBoundary extends React.Component {
     return { hasError: true, error };
   }
   componentDidCatch(error, errorInfo) {
-    console.error("ErrorBoundary caught an error:", error, errorInfo);
+    console.error("ErrorBoundary caught error:", error, errorInfo);
   }
   render() {
     if (this.state.hasError) {
@@ -64,12 +65,13 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // Default demo accounts
   const ACCOUNTS = [
     { username: 'reception', role: 'reception', name: 'Front Desk Reception', defaultTab: 'reception' },
     { username: 'doctor', role: 'doctor', name: 'Dr. Inderjit Singh (Consultant)', defaultTab: 'doctor' },
     { username: 'labtech', role: 'labtech', name: 'Pathology & Diagnostic Desk', defaultTab: 'labtech' },
-    { username: 'drkalyan', role: 'radiology', name: 'Dr. Kalyan (Radiology & PACS)', defaultTab: 'radiology' }
+    { username: 'drkalyan', role: 'radiology', name: 'Dr. Kalyan (Radiology & PACS)', defaultTab: 'radiology' },
+    { username: 'billing', role: 'billing', name: 'Cashier & Billing Desk', defaultTab: 'billing' },
+    { username: 'nurse', role: 'ward', name: 'Inpatient Nursing Station', defaultTab: 'ward' }
   ];
 
   useEffect(() => {
@@ -77,6 +79,8 @@ export default function App() {
       if (currentUser.role === 'doctor') setActiveTab('doctor');
       else if (currentUser.role === 'labtech') setActiveTab('labtech');
       else if (currentUser.role === 'radiology') setActiveTab('radiology');
+      else if (currentUser.role === 'billing') setActiveTab('billing');
+      else if (currentUser.role === 'ward') setActiveTab('ward');
       else setActiveTab('reception');
     }
   }, [currentUser]);
@@ -99,7 +103,7 @@ export default function App() {
       setCurrentUser(userData);
       localStorage.setItem('gnh_user', JSON.stringify(userData));
     } else {
-      setLoginError('Invalid credentials. (Hint: use reception, doctor, labtech, or drkalyan with password gnh123)');
+      setLoginError('Invalid credentials. (Hint: use reception, doctor, labtech, drkalyan, billing, or nurse with password gnh123)');
     }
   };
 
@@ -110,7 +114,6 @@ export default function App() {
     setPassword('');
   };
 
-  // Quick Switcher helper
   const quickLogin = (acc) => {
     setCurrentUser(acc);
     localStorage.setItem('gnh_user', JSON.stringify(acc));
@@ -141,7 +144,7 @@ export default function App() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. reception, doctor, labtech, drkalyan"
+                placeholder="reception, doctor, labtech, drkalyan, billing, nurse"
                 className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded text-slate-100 outline-none focus:border-blue-500"
               />
             </div>
@@ -165,10 +168,9 @@ export default function App() {
             </button>
           </form>
 
-          {/* 1-Click Role Logins for Fast Access */}
           <div className="pt-4 border-t border-slate-800 space-y-2">
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">Quick Access Portals</div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {ACCOUNTS.map((acc, idx) => (
                 <button
                   key={idx}
@@ -191,15 +193,15 @@ export default function App() {
     <ErrorBoundary>
       <div className="min-h-screen bg-slate-950 flex flex-col font-sans">
         {/* Top Navbar */}
-        <header className="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between text-xs print:hidden">
-          <div className="flex items-center gap-6">
+        <header className="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex flex-wrap items-center justify-between text-xs print:hidden gap-3">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
               <Building2 className="w-5 h-5 text-blue-500" />
               <span className="font-black text-sm tracking-wide text-white">GNH EMR</span>
             </div>
 
-            {/* Navigation Tabs */}
-            <nav className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+            {/* Complete Module Tabs */}
+            <nav className="flex flex-wrap items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
               <button
                 onClick={() => setActiveTab('reception')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded font-bold transition text-xs ${
@@ -232,6 +234,22 @@ export default function App() {
               >
                 <Film className="w-3.5 h-3.5" /> Radiology PACS
               </button>
+              <button
+                onClick={() => setActiveTab('billing')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded font-bold transition text-xs ${
+                  activeTab === 'billing' ? 'bg-amber-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Receipt className="w-3.5 h-3.5" /> Billing & TPA
+              </button>
+              <button
+                onClick={() => setActiveTab('ward')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded font-bold transition text-xs ${
+                  activeTab === 'ward' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Bed className="w-3.5 h-3.5" /> IPD & Ward
+              </button>
             </nav>
           </div>
 
@@ -253,13 +271,15 @@ export default function App() {
           </div>
         </header>
 
-        {/* Main Workstation View Area */}
+        {/* Main Workstation View */}
         <main className="flex-1 flex flex-col">
           <ErrorBoundary>
             {activeTab === 'reception' && <IntakeDashboard />}
             {activeTab === 'doctor' && <DoctorDashboard />}
             {activeTab === 'labtech' && <LabDashboard />}
             {activeTab === 'radiology' && <RadiologyDashboard />}
+            {activeTab === 'billing' && <BillingDashboard />}
+            {activeTab === 'ward' && <WardDashboard />}
           </ErrorBoundary>
         </main>
       </div>
